@@ -5,7 +5,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import TransformStamped
 import tf2_ros
-import time
+import message_filters
 
 import numpy as np
 from transforms3d.quaternions import mat2quat, quat2mat
@@ -50,7 +50,7 @@ def ros_pose_to_rt(pose):
 
 
 MODEL = 'cube'
-WORLD = 'world'
+ROBOT = 'fetch'
 
 class PoseToTF(Node):
     def __init__(self):
@@ -58,43 +58,26 @@ class PoseToTF(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.br = tf2_ros.TransformBroadcaster(self)
-        self.create_subscription(Pose, f'/model/{MODEL}/pose', self.cb, 10)
+        
+        sub_a = message_filters.Subscriber(self, Pose, f'/model/{MODEL}/pose')
+        sub_b = message_filters.Subscriber(self, Pose, f'/model/{ROBOT}/pose')
+
+        # Approximate sync by arrival time (Pose has no header)
+        self.sync = message_filters.ApproximateTimeSynchronizer(
+            [sub_a, sub_b], queue_size=10, slop=0.1, allow_headerless=True
+        )
+        self.sync.registerCallback(self.cb)        
 
 
-    def wait_for_tf(self, target='world', source='cube', timeout=1.0):
-        """
-        Block until the transform (source->target) is available, or return None after timeout.
-        """
-        end_time = time.time() + timeout
-        while rclpy.ok() and time.time() < end_time:
-            rclpy.spin_once(self, timeout_sec=0.1)
-            try:
-                t = self.tf_buffer.lookup_transform(
-                    target,
-                    source,
-                    rclpy.time.Time())
-                return t   # got it
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                # Not ready yet, keep looping
-                continue
-        return None
+    def cb(self, pose_model: Pose, pose_robot: Pose):
 
+        # convert the cube pose in world frame T_wo
+        T_wo = ros_pose_to_rt(pose_model)
+        print('T_wo', T_wo)
 
-    def cb(self, msg: Pose):
-
-        # msg contains the cube pose in world frame T_wo
-        T_wo = ros_pose_to_rt(msg)
-
-        # query fetch base link pose in Gazebo world T_wb
-        t = self.wait_for_tf(
-                'world',          # target_frame
-                'base_link')      # source_frame
-        p = Pose()
-        p.position.x = t.transform.translation.x       
-        p.position.y = t.transform.translation.y
-        p.position.z = t.transform.translation.z
-        p.orientation = t.transform.rotation
-        T_wb = ros_pose_to_rt(p)
+        # convert the robot pose in world frame T_wb
+        T_wb = ros_pose_to_rt(pose_robot)
+        print('T_wb', T_wb)
     
         # compute the object pose in robot base link T_bo
         T_bo = np.matmul(np.linalg.inv(T_wb), T_wo)
@@ -118,7 +101,15 @@ class PoseToTF(Node):
         print('sending pose in base link: ' + MODEL)
 
 
-if __name__ == "__main__":
+def main():
     rclpy.init()
-    rclpy.spin(PoseToTF())
-    rclpy.shutdown()
+    node = PoseToTF()
+    # Spin continuously; otherwise you’ll process one callback and quit
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
