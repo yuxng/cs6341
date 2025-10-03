@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+"""
+CS 6341 Homework 2 Programming
+Transformation
+"""
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Pose
@@ -11,6 +16,7 @@ import numpy as np
 from transforms3d.quaternions import mat2quat, quat2mat
 
 
+# convert quaternion
 def ros_quat(tf_quat): #wxyz -> xyzw
     quat = np.zeros(4)
     quat[-1] = tf_quat[0]
@@ -69,6 +75,7 @@ class PoseToTF(Node):
         self.sync.registerCallback(self.cb)        
 
 
+    # callback function to handle the cube pose and robot pose
     def cb(self, pose_model: Pose, pose_robot: Pose):
 
         # convert the cube pose in world frame T_wo
@@ -79,9 +86,12 @@ class PoseToTF(Node):
         T_wb = ros_pose_to_rt(pose_robot)
         print('T_wb', T_wb)
     
-        # compute the object pose in robot base link T_bo
-        T_bo = np.matmul(np.linalg.inv(T_wb), T_wo)
-        print('T_bo', T_bo)
+        ################ TO DO ##########################
+        # compute the object pose in robot base link T_bo: 4x4 transformation matrix
+
+        ################ TO DO ########################## 
+        
+        # get the position and quaternion from T_bo
         position = T_bo[:3, 3]
         quaternion = mat2quat(T_bo[:3, :3])
         q = ros_quat(quaternion)
