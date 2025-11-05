@@ -88,9 +88,11 @@ def get_pose_gazebo(node):
     # convert the robot pose in world frame T_wb
     T_wb = ros_pose_to_rt(pose_robot)
     print('T_wb', T_wb)
-    
-    # compute the object pose in robot base link T_bo
-    T_bo = np.matmul(np.linalg.inv(T_wb), T_wo)
+
+    ################ TO DO ##########################
+    # compute the object pose in robot base link T_bo: 4x4 transformation matrix
+
+    ################ TO DO ##########################
     return T_bo
 
 
@@ -141,22 +143,27 @@ if __name__ == "__main__":
     T_bo = get_pose_gazebo(node)
     print('T_bo', T_bo)
 
+    ################ TO DO ##########################
     # add a collision box in moveit scene for the cube
+    # follow this example: https://github.com/IRVLUTD/pymoveit2/blob/main/examples/ex_collision_primitive.py
+    # use the function moveit2.add_collision_box() to add a collision box for the cube
     object_id = 'cube'
-    position = T_bo[:3, 3]
     dimensions = [0.06, 0.06, 0.06]
-    quat_xyzw = ros_quat(mat2quat(T_bo[:3, :3]))
-    moveit2.add_collision_box(
-        id=object_id, position=position, quat_xyzw=quat_xyzw, size=dimensions
-    )
+
+    ################ TO DO ##########################
+
 
     # get the current robot joints
     joint_positions = get_current_joint_states(node)
     print(joint_positions)
 
+    ################ TO DO ##########################
     # forward kinematics
+    # follow this example: https://github.com/IRVLUTD/pymoveit2/blob/main/examples/ex_fk.py
+    # use the function moveit2.compute_fk() for FK, return the results to retval
     retval = None
-    retval = moveit2.compute_fk(joint_positions)
+
+    ################ TO DO ##########################
     if retval is None:
         print("Forward kinematics failed.")
     else:
@@ -169,10 +176,15 @@ if __name__ == "__main__":
               f"pos=({p.x:.4f}, {p.y:.4f}, {p.z:.4f}), "
               f"quat=({q.x:.4f}, {q.y:.4f}, {q.z:.4f}, {q.w:.4f})")             
 
-        # compute IK using the end-effector pose
         print("---------------------------")
+
+        ################ TO DO ##########################
+        # inverse kinematics using the above end-effector pose (p, q)
+        # follow this example: https://github.com/IRVLUTD/pymoveit2/blob/main/examples/ex_ik.py
+        # use the function moveit2.compute_ik() for IK, return the results to retval_ik
         retval_ik = None
-        retval_ik = moveit2.compute_ik(p, q)
+
+        ################ TO DO ##########################
         if retval_ik is None:
             print("Inverse kinematics failed.")
         else:
