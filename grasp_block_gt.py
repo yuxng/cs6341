@@ -5,18 +5,16 @@ CS 6341 Homework 4 Programming
 Grasping
 """
 
-import threading
 from threading import Thread
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.task import Future
-from rclpy.executors import MultiThreadedExecutor
+
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import TransformStamped
 from tf2_ros import TransformBroadcaster
-
 
 from pymoveit2 import MoveIt2
 from pymoveit2 import GripperInterface
@@ -165,13 +163,6 @@ class FrameBroadcaster(Node):
         t.transform.rotation.x, t.transform.rotation.y, t.transform.rotation.z, t.transform.rotation.w = self.q
         self.br.sendTransform(t)
 
-
-def spin_in_background(executor):
-    try:
-        executor.spin()
-    finally:
-        executor.shutdown()
-
     
 if __name__ == "__main__":
     """
@@ -181,14 +172,14 @@ if __name__ == "__main__":
     rclpy.init()
 
     # Create node for this example
-    node = Node("cs6341_homework4")    
+    node_moveit = Node("cs6341_homework4")    
 
     # Create callback group that allows execution of callbacks in parallel without restrictions
     callback_group = ReentrantCallbackGroup()
 
     # Create MoveIt 2 interface
     moveit2 = MoveIt2(
-        node=node,
+        node=node_moveit,
         joint_names=robot.joint_names(),
         base_link_name=robot.base_link_name(),
         end_effector_name=robot.end_effector_name(),
@@ -197,8 +188,9 @@ if __name__ == "__main__":
     )    
 
     # Create gripper interface
+    node_gripper = Node("fetch_gripper")
     gripper_interface = GripperInterface(
-        node=node,
+        node=node_gripper,
         gripper_joint_names=robot.gripper_joint_names(),
         open_gripper_joint_positions=robot.OPEN_GRIPPER_JOINT_POSITIONS,
         closed_gripper_joint_positions=robot.CLOSED_GRIPPER_JOINT_POSITIONS,
@@ -207,26 +199,20 @@ if __name__ == "__main__":
         gripper_command_action_name="gripper_action_controller/gripper_cmd",
     )
 
-    # Spin the node in background thread(s) and wait a bit for initialization
-    executor = rclpy.executors.MultiThreadedExecutor(2)
-    executor.add_node(node)
-    executor_thread = Thread(target=executor.spin, daemon=True, args=())
-    executor_thread.start()
-    node.create_rate(1.0).sleep()
-  
-    gripper_interface.close()
+    gripper_interface.toggle()
     gripper_interface.wait_until_executed()
-    input('next?')
-    
+    gripper_interface.open()
+    gripper_interface.wait_until_executed()
+
     # query the pose of the cube
     while 1:
-        T_bo = get_pose_gazebo(node)
+        T_bo = get_pose_gazebo(node_moveit)
         if T_bo is not None:
             break
     print('T_bo', T_bo)
 
     # get the current robot joints
-    joint_positions = get_current_joint_states(node)
+    joint_positions = get_current_joint_states(node_moveit)
     print(joint_positions)
 
     # try to figure out the end-effector pose for grapsing the block
@@ -240,11 +226,18 @@ if __name__ == "__main__":
 
     # publish the frame for debugging
     # Start executor in a separate thread (non-blocking)
-    exec_ = MultiThreadedExecutor()
+    # Spin the node in background thread(s) and wait a bit for initialization
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(node_moveit)
+    executor.add_node(node_gripper)
     node_tf = FrameBroadcaster(p, q_xyzw)
-    exec_.add_node(node_tf)
-    spin_thread = threading.Thread(target=spin_in_background, args=(exec_,), daemon=True)
-    spin_thread.start()
+    executor.add_node(node_tf)
+    executor_thread = Thread(target=executor.spin, daemon=True, args=())
+    executor_thread.start()    
+
+    # Sleep a while in order to get the first joint state
+    node_moveit.create_rate(3.0).sleep()
+    node_gripper.create_rate(3.0).sleep()        
 
     # compute IK using the end-effector pose
     print("---------------------------")
@@ -266,9 +259,12 @@ if __name__ == "__main__":
         print('joint distance:', distance)
 
         # use moveit2 to move to the joint position from IK
+        print(moveit2.joint_state)
+        input('move?')
         moveit2.move_to_configuration(joint_positions_ik)
         moveit2.wait_until_executed()
 
+        print(moveit2.joint_state)
         input('move to grasping pose?')
 
         # move the grasping pose
@@ -283,10 +279,21 @@ if __name__ == "__main__":
         moveit2.wait_until_executed()
 
         # close gripper
+        print(moveit2.joint_state)
+        input('close the gripper?')
+        gripper_interface.close()
+        gripper_interface.wait_until_executed()
 
+        # move to the initial configuration
+        print(moveit2.joint_state)
+        input('move back?')
+        moveit2.move_to_configuration(joint_positions)
+        moveit2.wait_until_executed()
 
     # Clean shutdown
-    exec_.shutdown()
-    spin_thread.join()
+    print('finished grasping the cube')
+    executor.shutdown()
+    executor_thread.join()
+    node_gripper.destroy_node()
     node_tf.destroy_node()
     rclpy.shutdown()   
