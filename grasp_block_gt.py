@@ -158,7 +158,7 @@ class FrameBroadcaster(Node):
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = 'base_link'
-        t.child_frame_id = 'my_frame'
+        t.child_frame_id = 'standoff'
         t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = self.p
         t.transform.rotation.x, t.transform.rotation.y, t.transform.rotation.z, t.transform.rotation.w = self.q
         self.br.sendTransform(t)
