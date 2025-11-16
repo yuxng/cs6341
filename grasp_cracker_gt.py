@@ -38,7 +38,7 @@ joint_limits = {'bellows_joint': [0.0, 0.4],
     'r_wheel_joint': [-3.14, 3.14],
     'shoulder_lift_joint': [-1.221, 1.518],
     'shoulder_pan_joint': [-1.6056, 1.6056],
-    'torso_lift_joint': [0.0, 0.38615],
+    'torso_lift_joint': [0.371, 0.38615],
     'upperarm_roll_joint': [-3.14, 3.14],
     'wrist_flex_joint': [-2.16, 2.16],
     'wrist_roll_joint': [-3.14, 3.14],
@@ -249,7 +249,7 @@ def grasp(node, moveit2, gripper_interface, RT_grasp, joint_positions_initial):
     # lift object
     input('lift object?')
     RT_lift = RT_grasp.copy()
-    RT_lift[2, 3] += 0.1
+    RT_lift[2, 3] += 0.05
     q_xyzw, p = rt_to_ros_qt(RT_lift)  # xyzw for quat
     joint_positions = get_current_joint_states(node)    
     moveit2.move_to_pose(
@@ -307,6 +307,24 @@ def sort_grasps(RT_obj, RT_gripper, RT_grasps):
     print(distances)
     print(index)
     return RT_grasps_base, index
+
+
+class FrameBroadcaster(Node):
+    def __init__(self, p=(0.5,0,0.2), q=(0,0,0,1)):
+        super().__init__('frame_broadcaster')
+        self.br = TransformBroadcaster(self)
+        self.timer = self.create_timer(0.05, self.timer_cb)
+        self.p = [float(x) for x in p]
+        self.q = [float(x) for x in q]
+
+    def timer_cb(self):
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'base_link'
+        t.child_frame_id = 'RT_grasp'
+        t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = self.p
+        t.transform.rotation.x, t.transform.rotation.y, t.transform.rotation.z, t.transform.rotation.w = self.q
+        self.br.sendTransform(t)
 
 
 if __name__ == "__main__":
@@ -381,7 +399,7 @@ if __name__ == "__main__":
         position=p,
         quat_xyzw=q_xyzw,
         scale=1.0
-    )     
+    )         
 
     input('next?')    
             
@@ -415,6 +433,18 @@ if __name__ == "__main__":
         
     # grasp planning
     RT_grasp, grasp_num = plan_grasp(moveit2, RT_grasps_base, grasp_index)
+
+    # publish the frame for debugging
+    # Start executor in a separate thread (non-blocking)
+    # Spin the node in background thread(s) and wait a bit for initialization
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(node_moveit)
+    executor.add_node(node_gripper)
+    q_xyzw, p = rt_to_ros_qt(RT_grasp)  # xyzw for quat 
+    node_tf = FrameBroadcaster(p, q_xyzw)
+    executor.add_node(node_tf)
+    executor_thread = Thread(target=executor.spin, daemon=True, args=())
+    executor_thread.start()
         
     # grasp object
     grasp(node_moveit, moveit2, gripper_interface, RT_grasp, joint_positions)
